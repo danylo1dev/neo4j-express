@@ -1,7 +1,8 @@
-import { goodfellas } from '../../test/fixtures/movies.js'
-import { ratings } from '../../test/fixtures/ratings.js'
-import NotFoundError from '../errors/not-found.error.js'
-import { toNativeTypes } from '../utils.js'
+import { goodfellas } from "../../test/fixtures/movies.js";
+import { ratings } from "../../test/fixtures/ratings.js";
+import NotFoundError from "../errors/not-found.error.js";
+import { toNativeTypes } from "../utils.js";
+import { int } from "neo4j-driver";
 
 // TODO: Import the `int` function from neo4j-driver
 
@@ -9,16 +10,16 @@ export default class ReviewService {
   /**
    * @type {neo4j.Driver}
    */
-  driver
+  driver;
 
   /**
-  * The constructor expects an instance of the Neo4j Driver, which will be
-  * used to interact with Neo4j.
-  *
-  * @param {neo4j.Driver} driver
-  */
+   * The constructor expects an instance of the Neo4j Driver, which will be
+   * used to interact with Neo4j.
+   *
+   * @param {neo4j.Driver} driver
+   */
   constructor(driver) {
-    this.driver = driver
+    this.driver = driver;
   }
 
   /**
@@ -37,13 +38,32 @@ export default class ReviewService {
    * @param {number} skip     The number of records to skip
    * @returns {Promise<Record<string, any>>}
    */
-  // tag::forMovie[]
-  async forMovie(id, sort = 'timestamp', order = 'ASC', limit = 6, skip = 0) {
-    // TODO: Get ratings for a Movie
+  async forMovie(id, sort = "timestamp", order = "ASC", limit = 6, skip = 0) {
+    const session = this.driver.session();
 
-    return ratings
+    const res = await session.executeRead((tx) =>
+      tx.run(
+        `
+        MATCH (u:User)-[r:RATED]->(m:Movie {tmdbId: $id})
+        RETURN r {
+          .rating,
+          .timestamp,
+          user: u {
+            .id, .name
+          }
+        } AS review
+        ORDER BY r.\`${sort}\` ${order}
+        SKIP $skip
+        LIMIT $limit
+      `,
+        { id, limit: int(limit), skip: int(skip) }
+      )
+    );
+
+    await session.close();
+
+    return res.records.map((row) => toNativeTypes(row.get("review")));
   }
-  // end::forMovie[]
 
   /**
    * @public
@@ -57,14 +77,39 @@ export default class ReviewService {
    * @param {number} rating   An integer representing the rating from 1-5
    * @returns {Promise<Record<string, any>>}  A movie object with a rating property appended
    */
-  // tag::add[]
   async add(userId, movieId, rating) {
-    // TODO: Convert the native integer into a Neo4j Integer
-    // TODO: Save the rating in the database
-    // TODO: Return movie details and a rating
+    rating = int(rating);
 
-    return goodfellas
+    const session = this.driver.session();
+
+    const res = await session.executeWrite((tx) =>
+      tx.run(
+        `
+          MATCH (u:User {userId: $userId})
+          MATCH (m:Movie {tmdbId: $movieId})
+          MERGE (u)-[r:RATED]->(m)
+          SET r.rating = $rating,
+              r.timestamp = timestamp()
+          RETURN m {
+            .*,
+            rating: r.rating
+          } AS movie
+        `,
+        { userId, movieId, rating }
+      )
+    );
+
+    await session.close();
+
+    if (res.records.length === 0) {
+      throw new NotFoundError(
+        `Could not create rating for Movie ${movieId} by User ${userId}`
+      );
+    }
+
+    const [first] = res.records;
+    const movie = first.get("movie");
+
+    return toNativeTypes(movie);
   }
-  // end::add[]
-
 }

@@ -1,21 +1,21 @@
-import { genres } from '../../test/fixtures/genres.js'
-import NotFoundError from '../errors/not-found.error.js'
-import { toNativeTypes } from '../utils.js'
+import { genres } from "../../test/fixtures/genres.js";
+import NotFoundError from "../errors/not-found.error.js";
+import { toNativeTypes } from "../utils.js";
 
 export default class GenreService {
   /**
    * @type {neo4j.Driver}
    */
-  driver
+  driver;
 
   /**
-    * The constructor expects an instance of the Neo4j Driver, which will be
-    * used to interact with Neo4j.
-    *
-    * @param {neo4j.Driver} driver
-    */
+   * The constructor expects an instance of the Neo4j Driver, which will be
+   * used to interact with Neo4j.
+   *
+   * @param {neo4j.Driver} driver
+   */
   constructor(driver) {
-    this.driver = driver
+    this.driver = driver;
   }
 
   /**
@@ -35,15 +35,31 @@ export default class GenreService {
    *
    * @returns {Promise<Record<string, any>[]>}
    */
-  // tag::all[]
   async all() {
-    // TODO: Open a new session
-    // TODO: Get a list of Genres from the database
-    // TODO: Close the session
-
-    return genres
+    const session = this.driver.session();
+    const res = await session.executeRead((tx) => {
+      return tx.run(`MATCH (g:Genre)
+      WHERE g.name <> '(no genres listed)'
+      
+      CALL {
+        WITH g
+        MATCH (g)<-[:IN_GENRE]-(m:Movie)
+        WHERE m.imdbRating IS NOT NULL AND m.poster IS NOT NULL
+        RETURN m.poster AS poster
+        ORDER BY m.imdbRating DESC LIMIT 1
+      }
+      
+      RETURN g {
+        .*,
+        movies: count { (g)<-[:IN_GENRE]-(:Movie) },
+        poster: poster
+      }
+      ORDER BY g.name ASC`);
+    });
+    const genres = res.records.map((row) => toNativeTypes(row.get("g")));
+    await session.close();
+    return genres;
   }
-  // end::all[]
 
   /**
    * @public
@@ -55,15 +71,31 @@ export default class GenreService {
    * @param {string} name                     The name of the genre
    * @returns {Promise<Record<string, any>>}  The genre information
    */
-  // tag::find[]
   async find(name) {
-    // TODO: Open a new session
-    // TODO: Get Genre information from the database
-    // TODO: Throw a 404 Error if the genre is not found
-    // TODO: Close the session
+    const session = this.driver.session();
+    const res = await session.executeRead((tx) => {
+      return tx.run(
+        `MATCH (g:Genre {name: $name})<-[:IN_GENRE]-(m:Movie)
+      WHERE m.imdbRating IS NOT NULL AND m.poster IS NOT NULL AND g.name <> '(no genres listed)'
+      WITH g, m
+      ORDER BY m.imdbRating DESC
+      
+      WITH g, head(collect(m)) AS movie
+      
+      RETURN g {
+          .name,
+          movies: count { (g)<-[:IN_GENRE]-() },
+          poster: movie.poster
+      } AS genre`,
+        { name }
+      );
+    });
+    if (res.records.length === 0) {
+      throw new NotFoundError(`Could not find a genre with the name '${name}'`);
+    }
+    await session.close();
+    const [row] = res.records;
 
-    return genres.find(genre => genre.name === name)
+    return toNativeTypes(row.get("genre"));
   }
-  // end::find[]
-
 }

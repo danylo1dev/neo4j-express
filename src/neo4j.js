@@ -1,4 +1,5 @@
 // TODO: Import the neo4j-driver dependency
+import neo4j from "neo4j-driver";
 
 /**
  * A singleton instance of the Neo4j Driver to be used across the app
@@ -6,9 +7,8 @@
  * @type {neo4j.Driver}
  */
 // tag::driver[]
-let driver
+let driver;
 // end::driver[]
-
 
 /**
  * Initiate the Neo4j Driver
@@ -20,6 +20,11 @@ let driver
  */
 // tag::initDriver[]
 export async function initDriver(uri, username, password) {
+  driver = neo4j.driver(uri, neo4j.auth.basic(username, password));
+
+  await driver.verifyConnectivity();
+
+  return driver;
   // TODO: Create an instance of the driver here
 }
 // end::initDriver[]
@@ -35,7 +40,7 @@ export async function initDriver(uri, username, password) {
  */
 // tag::getDriver[]
 export function getDriver() {
-  return driver
+  return driver;
 }
 // end::getDriver[]
 
@@ -48,7 +53,7 @@ export function getDriver() {
 // tag::closeDriver[]
 export async function closeDriver() {
   if (driver) {
-    await driver.close()
+    await driver.close();
   }
 }
 // end::closeDriver[]
