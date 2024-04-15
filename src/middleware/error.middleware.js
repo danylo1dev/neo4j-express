@@ -1,3 +1,5 @@
+const status = require("http-status");
+
 /**
  * Generic error handler.  Output error details as JSON.
  *
@@ -9,14 +11,13 @@
  * @param {express.NextFunction} next
  */
 export default function errorMiddleware(error, req, res, next) {
-  console.log(error)
+  console.log(error);
 
-  res.status(error.code || 500)
-    .json({
-      status: 'error',
-      code: error.code || 500,
-      message: error.message,
-      trace: error.trace,
-      details: error.details,
-    })
+  res.status(error.code || status.INTERNAL_SERVER_ERROR).json({
+    status: "error",
+    code: error.code || status.INTERNAL_SERVER_ERROR,
+    message: error.message,
+    trace: error.trace,
+    details: error.details,
+  });
 }
